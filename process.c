@@ -1,5 +1,6 @@
 #include "process.h"
 #include <stdio.h>
+#include <stdlib.h>
 #define BSIZE 256
 
 #include <unistd.h>
@@ -9,13 +10,22 @@
 #include <fcntl.h>
 #include <signal.h>
 
+#define RUNNING 1
+#define WAITING 0
+
+void p1_handler(int signal, siginfo_t *info, void* ptr);
+int p1_status;
+
+
 int menu()
 {
     fputs("1.stdin\n",stdout);
     fputs("2.plik\n",stdout);
     fputs("Wybierz opcje:",stdout);
     int opcja;
-    scanf("%d",&opcja);
+    char op_buf[5];
+    fgets(op_buf,5,stdin);
+    opcja = atoi(op_buf);
     return opcja;
 }
 
@@ -32,14 +42,41 @@ int readLine(FILE *src, char *buffer)
     return read;
 }
 
+void p1_handler(int signal, siginfo_t *info, void* ptr)
+{
+    pid_t senderPID = info->si_pid;
+    int pipe_signal;
+    printf("P1 handler: senderPID=%d\n",senderPID);
+    if(senderPID == getppid())
+    {
+        close(pipefd[0][1]);
+        read(pipefd[0][0],&pipe_signal,sizeof(int));
+        printf("Odczytany signal z pipe %d\n",pipe_signal);
+        while(p1_status==RUNNING);
+        printf("SIGUSR1 do somsiada\n");
+        kill(getpid()+1,SIGUSR1);
+        printf("Killing myself\n");
+        raise(pipe_signal);
+        close(pipefd[0][0]);
+    }
+}
 
 int process1(const char *fifo1Loc)
 {
     char line[BSIZE];
     int option, run=1;
+    struct sigaction sa_p1;
+    sa_p1.sa_flags=SA_SIGINFO;
+    sa_p1.sa_sigaction = p1_handler;
+    sigaction(SIGUSR1,&sa_p1,NULL);
+
+
     while(run)
     {
+        p1_status=WAITING;
+        fflush(stdin);
         option = menu();
+        p1_status=RUNNING;
         int fifo1FD1;
         switch(option)
         {
@@ -69,21 +106,23 @@ int process1(const char *fifo1Loc)
                     if(fileIn==NULL)
                     {
                         printf("Plik nie istnieje\n");
-                        return 5;
                     }
-                    fifo1FD1= open(fifo1Loc,O_WRONLY);
-                    int readPossible=1;
-                    while(readPossible)
+                    else
                     {
-                        
-                        for(int i=0;i<BSIZE;i++) line[i]=0; //buffer clr
-                        readPossible = readLine(fileIn,line);
-                        //printf("read=%d line: %s \n",readPossible,line);
-                        write(fifo1FD1,line,BSIZE);
-                        
+                        fifo1FD1= open(fifo1Loc,O_WRONLY);
+                        int readPossible=1;
+                        while(readPossible)
+                        {
+                            
+                            for(int i=0;i<BSIZE;i++) line[i]=0; //buffer clr
+                            readPossible = readLine(fileIn,line);
+                            //printf("read=%d line: %s \n",readPossible,line);
+                            write(fifo1FD1,line,BSIZE);
+                            
+                        }
+                        fclose(fileIn);
+                        close(fifo1FD1);
                     }
-                    fclose(fileIn);
-                    close(fifo1FD1);
                 } 
         break;
         default:
@@ -93,8 +132,30 @@ int process1(const char *fifo1Loc)
     return 0; 
 }
 
-int process2(const char*fifo1Loc,const char *fifo2Loc)
+void p2_handler(int signal, siginfo_t *info,void *ptr)
+{
+    pid_t senderPID = info->si_pid;
+    int pipe_signal;
+    printf("P2 handler %d from %d\n", signal, info->si_pid);
+    if(senderPID == getpid()-1)
+    {
+        close(pipefd[1][1]);
+        read(pipefd[1][0],&pipe_signal,sizeof(int));
+        printf("Odczytany signal z pipe %d\n",pipe_signal);
+        printf("SIGUSR1 do somsiada\n");
+        kill(getpid()+1,SIGUSR1);
+        printf("Killing myself\n");
+        raise(pipe_signal);
+        close(pipefd[1][0]);
+    }
+}
+
+int process2(const char *fifo1Loc,const char *fifo2Loc)
 {//odbiera od 0 i liczy il znakow
+    struct sigaction sa_p2;
+    sa_p2.sa_flags = SA_SIGINFO;
+    sa_p2.sa_sigaction = p2_handler;
+    sigaction(SIGUSR1,&sa_p2,NULL);
     int run=1;
     while(run)
     {
@@ -116,33 +177,44 @@ int process2(const char*fifo1Loc,const char *fifo2Loc)
     return 0;
 }
 
-void p3_handler(int signal)
+void p3_handler(int signal, siginfo_t* info,void* ptr)
 {
-    switch(signal)
+    pid_t senderPID = info->si_pid;
+    if(senderPID!=getpid()-1)
     {
-        case SIGTSTP:
-            printf("SIGTSTP\n");
-            break;
-        case SIGTERM:
-            printf("SIGTERM\n");
-            break;
-        case SIGCONT:
-            printf("SIGCONT\n");
-            break;
+        switch(signal)
+        {
+            case SIGTSTP:
+                printf("SIGTSTP\n");
+                break;
+            case SIGTERM:
+                printf("SIGTERM\n");
+                break;
+            case SIGCONT:
+                printf("SIGCONT\n");
+                break;
+        }
+        kill(getppid(),signal);
     }
-    //kill(getppid(),signal);
+    else if(signal==SIGUSR1)
+    {
+        //to do :)
+        printf("Siema to ja wasz xXhandlerXxPL2069 od SIGUSR1 (p3 gang)\n ");
+    }
+    
 }
 
 
 int process3(const char *fifo2Loc)
 {  
     int run=1;
-    struct sigaction sa_term;
-    sa_term.sa_handler = p3_handler;
-    sa_term.sa_flags=SA_RESTART;
-    sigaction(SIGTERM,&sa_term,NULL);
-    sigaction(SIGTSTP,&sa_term,NULL);
-    sigaction(SIGCONT,&sa_term,NULL);
+    struct sigaction sa_p3;
+    sa_p3.sa_flags=SA_SIGINFO;
+    sa_p3.sa_sigaction = p3_handler;
+    sigaction(SIGTERM,&sa_p3,NULL);
+    sigaction(SIGTSTP,&sa_p3,NULL);
+    sigaction(SIGCONT,&sa_p3,NULL);
+    //sigaction(SIGUSR1,&sa_p3,NULL);
     while(run)
     {
         int fifo2FD2 = open(fifo2Loc,O_RDONLY);

@@ -7,6 +7,8 @@
 #include <fcntl.h>
 #include "process.h"
 #include <signal.h>
+#include <sys/shm.h>
+#include <sys/ipc.h>
 #define BSIZE 256
 
 void main_handler(int signal, siginfo_t* info,void*);
@@ -16,6 +18,15 @@ pid_t child[3];
 
 int main()
 {
+    //ustawienie maski sygnalow
+    sigfillset(&blocked);
+    sigdelset(&blocked,SIGTERM);
+    sigdelset(&blocked,SIGTSTP);
+    sigdelset(&blocked,SIGCONT);
+    sigdelset(&blocked,SIGUSR1);
+    sigfillset(&blocked_chld);
+    sigdelset(&blocked_chld,SIGUSR1);
+    sigprocmask(SIG_SETMASK,&blocked,NULL);
     int run=1;
     //tworzenie fifo
 
@@ -27,14 +38,23 @@ int main()
         mkfifo(fifoLoc[i],0666);
     }
     //ustawianie pipe
-
+    int pipeMemID;
+    if((pipeMemID=shmget(IPC_PRIVATE,3*2*sizeof(int),IPC_CREAT|0666))==-1)
+    {
+        printf("Shm error\n");
+    }
+    pipefd[0]=(int*)shmat(pipeMemID,NULL,0);
+    pipefd[1]=pipefd[0]+2;
+    pipefd[2]=pipefd[1]+2;
     for(int i=0;i<3;i++)
     {
         if(pipe(pipefd[i])==-1)
         {
-            printf("Error pipe %d",i);
+            printf("Error pipe %d\n",i);
         }
     }
+
+
 
     //tworzenie procesow potomnych
     
@@ -72,9 +92,9 @@ int main()
     }
     //macierzysty
     struct sigaction sa_pm;
+    sigfillset(&sa_pm.sa_mask);
     sa_pm.sa_flags=SA_SIGINFO;
     sa_pm.sa_sigaction = main_handler;
-    sigemptyset(&sa_pm.sa_mask);
     sigaction(SIGTSTP,&sa_pm,NULL);
     sigaction(SIGTERM,&sa_pm,NULL);
     sigaction(SIGCONT,&sa_pm,NULL);
@@ -110,6 +130,6 @@ void main_handler(int signal,siginfo_t *info, void* ptr)
         } 
         printf("Wpisano do pipe\n");
         kill(child[0],SIGUSR1);
-        printf("SIGUST1 wyslany\n");
+        printf("SIGUSR1 wyslany\n");
     }
 }

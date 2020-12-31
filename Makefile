@@ -12,5 +12,5 @@ process: process.c process.h
 	gcc -c process.c process.h
 
 program: pm.o process.o
-	gcc pm.o process.o -o program
+	gcc pm.o process.o -o program -pthread
 

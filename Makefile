@@ -1,9 +1,15 @@
 $(CC)=gcc
 
+NAZWA = soproj
+
+exec:
+	make all
+	./$(NAZWA)
+
 all:
 	make pm
 	make process
-	make program
+	make $(NAZWA)
 
 pm: pm.c 
 	gcc -c pm.c
@@ -11,6 +17,6 @@ pm: pm.c
 process: process.c process.h
 	gcc -c process.c process.h
 
-program: pm.o process.o
-	gcc pm.o process.o -o program -pthread
+$(NAZWA): pm.o process.o
+	gcc pm.o process.o -o $(NAZWA) -pthread
 

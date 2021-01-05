@@ -80,7 +80,7 @@ int main()
         {
             case 0:
             //potomek i
-            printf("P%d: %d\n",i+1,getpid());
+            
             switch(i)
             {
                 case 0:
@@ -105,6 +105,7 @@ int main()
         }
     }
     //macierzysty
+    for(int i=0;i<3;i++) printf("P%d: %d\n",i+1,child[i]);
     struct sigaction sa_pm;
     sigfillset(&sa_pm.sa_mask);
     sa_pm.sa_flags=SA_SIGINFO|SA_RESTART;
@@ -154,6 +155,7 @@ void main_handler(int signal,siginfo_t *info, void* ptr)
         {
             printf("Wstrzymano\n");
             //execl("/bin/bash","");
+            //kill(getppid(),SIGCONT);
             sigsuspend(&blocked);
         }
         

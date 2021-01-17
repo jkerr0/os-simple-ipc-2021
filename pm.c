@@ -9,7 +9,7 @@
 #include <signal.h>
 #include <sys/shm.h>
 #include <sys/ipc.h>
-//#include <semaphore.h>
+#include <string.h>
 #define BSIZE 256
 
 void main_handler(int signal, siginfo_t* info,void*);
@@ -17,16 +17,11 @@ pid_t child[3];
 
 
 
-int main()
+int main(int argc, char *argv[])
 {
-    //ustawienie semaforow p1 i p3
-    /*
-    int semMemID=shmget(IPC_PRIVATE,2*sizeof(sem_t),IPC_CREAT|0666);
-    sem_t *sem = (sem_t*)shmat(semMemID,NULL,0);
-    mutex_rd=sem;
-    mutex_wr=sem+1;
-    sem_init(mutex_rd,1,0);
-    sem_init(mutex_wr,1,0);*/
+    if(argc==2 && strcmp(argv[1],"-v")==0) verbose=1;
+    else verbose=0;
+
     //ustawienie maski sygnalow
     sigfillset(&blocked);
     sigdelset(&blocked,SIGTERM);

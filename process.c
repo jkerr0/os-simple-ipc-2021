@@ -1,31 +1,24 @@
 #include "process.h"
 #include <stdio.h>
 #include <stdlib.h>
-#define BSIZE 256
-
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <signal.h>
-#include <semaphore.h>
+#define BSIZE 256
 
-#define RUNNING 1
-#define WAITING 0
-//extern int sig_counter;
 void p1_handler(int signal, siginfo_t *info, void* ptr);
 int p1_status;
 extern int *pipe_counter;
-extern sem_t *mutex_rd , *mutex_wr;
+
 
 void menu()
 {
     fputs("1.stdin\n",stdout);
     fputs("2.plik\n",stdout);
     fputs("Wybierz opcje:\n",stdout);
-    //scanf("%d",&opcja);
-    //return opcja;
 }
 
 int readLine(FILE *src, char *buffer)
@@ -45,27 +38,26 @@ void p1_handler(int signal, siginfo_t *info, void* ptr)
 {
     pid_t senderPID = info->si_pid;
     int pipe_signal=0;
-    printf("P1 handler: senderPID=%d\n",senderPID);
+    if(verbose) printf("P1 handler: senderPID=%d\n",senderPID);
     if(senderPID == getppid())
     {
-        printf("P1 h: pc=%d\n",*pipe_counter);
+        if(verbose)printf("P1 h: pc=%d\n",*pipe_counter);
+
         close(pipefd[*pipe_counter][0][1]);
         read(pipefd[*pipe_counter][0][0],&pipe_signal,sizeof(int));
-        printf("Odczytany signal z pipe %d\n",pipe_signal);
-        //while(p1_status==RUNNING);
-        //printf("SIGUSR1 do somsiada\n");
+        if(verbose) printf("Odczytany signal z pipe %d\n",pipe_signal);
         close(pipefd[*pipe_counter][0][0]);
         kill(getpid()+1,signal);
         switch(pipe_signal)
         {
             case SIGTERM:
                { //open pipe
-               
                 int ready;
                 close(pipe_term[1]);
                 read(pipe_term[0],&ready,sizeof(int));
                 close(pipe_term[0]);
-                printf("From pipe_term: %d",ready);
+                //closing
+                if(verbose) printf("From pipe_term: %d\n",ready);
                 kill(getpid()+1,SIGUSR1);
                 if(ready==1) exit(0);
                 else printf("P1 handler error\n");
@@ -84,6 +76,7 @@ int process1(const char *fifo1Loc)
 {
     char line[BSIZE];
     int option, run=1;
+    //signal handler setup
     struct sigaction sa_p1;
     sigfillset(&sa_p1.sa_mask);
     sa_p1.sa_flags=SA_SIGINFO|SA_RESTART;
@@ -93,20 +86,12 @@ int process1(const char *fifo1Loc)
 
     while(run)
     {
-        
-        p1_status=WAITING;
         sigprocmask(SIG_SETMASK,&blocked_chld,NULL);
         fflush(stdin);
         fflush(stdout);
-        menu();
-        //char op_buf[5]={'5','6','7'};
-        //fgets(op_buf,5,stdin);
-        //int option = atoi(op_buf);
+ 
         int option;
         scanf("%d",&option);
-        //sem_post(mutex_wr);
-        p1_status=RUNNING;
-        //sleep(1);
         int fifo1FD1;
         switch(option)
         {
@@ -130,8 +115,6 @@ int process1(const char *fifo1Loc)
                 {
                     printf("P1: Error fifo1\n");
                 }
-                //zapis do pliku fifo
-                //printf("Zapisano do fifo\n");
                 close(fifo1FD1);
             break;
             case 2:
@@ -143,7 +126,6 @@ int process1(const char *fifo1Loc)
                     if(fileIn==NULL)
                     {
                         printf("P1: Plik nie istnieje\n");
-                        //sem_post(mutex_rd);
                     }
                     else
                     {
@@ -155,7 +137,6 @@ int process1(const char *fifo1Loc)
                         int readPossible=1;
                         while(readPossible)
                         {
-                            //sleep(1);
                             for(int i=0;i<BSIZE;i++) line[i]=0; //buffer clr
                             readPossible = readLine(fileIn,line);
                             //printf("read=%d line: %s \n",readPossible,line);
@@ -167,12 +148,12 @@ int process1(const char *fifo1Loc)
                         }
                         close(fifo1FD1);
                         fclose(fileIn);
-                        //sem_wait(mutex_rd);
                     }
                 } 
             break;
             default:
-            printf("P1: Error - niewlasciwa opcja: %d\n",option/*,op_buf*/);   
+            printf("P1: Error - niewlasciwa opcja: %d\n",option/*,op_buf*/); 
+            fflush(stdin);  
         }
         
     }
@@ -183,22 +164,29 @@ void p2_handler(int signal, siginfo_t *info,void *ptr)
 {
     pid_t senderPID = info->si_pid;
     int pipe_signal;
-    printf("P2 handler %d from %d\n", signal, info->si_pid);
+    if(verbose)
+    {
+    printf("P2 handler %d -> %d\n", signal, info->si_pid);
     printf("P2 h: pc=%d\n",*pipe_counter);
+    }
     if(senderPID == getpid()-1)
     {
         kill(getpid()+1,signal);
+        if(verbose)printf("Sig: %d -> %d\n",signal,getpid()+1);
         if(signal==SIGUSR1)
         {
             close(pipefd[*pipe_counter][1][1]);
             read(pipefd[*pipe_counter][1][0],&pipe_signal,sizeof(int));
-            //printf("Odczytany signal z pipe %d\n",pipe_signal);
-            //printf("SIGUSR1 do somsiada\n");
+            if(verbose)
+            {
+                printf("Odczytany signal z pipe %d\n",pipe_signal);
+                printf("SIGUSR1 do %d\n",getpid()+1);
+            }
             close(pipefd[*pipe_counter][1][0]);
             switch(pipe_signal)
             {
                 case SIGTERM:
-                    //printf("P2 term\n");
+                    if(verbose) printf("P2 term\n");
                     exit(0);
                     break;
                 case SIGTSTP:
@@ -264,21 +252,24 @@ void p3_handler(int signal, siginfo_t* info,void* ptr)
     }
     else if((signal==SIGUSR1 || signal==SIGUSR2) && senderPID==getpid()-1)
     {
-        printf("P3 h: pc=%d\n",*pipe_counter);
+        //printf("P3 h: pc=%d\n",*pipe_counter);
         if(signal==SIGUSR1)
         {
             int pipe_signal;
-            //printf("P3 handler %d from %d\n", signal, info->si_pid);
+            if(verbose) printf("P3 handler %d from %d\n", signal, info->si_pid);
+            
             close(pipefd[*pipe_counter][2][1]);
             read(pipefd[*pipe_counter][2][0],&pipe_signal,sizeof(int));
-            printf("Odczytany signal z pipe %d\n",pipe_signal);
+            
+            if(verbose) printf("Odczytany signal z pipe %d\n",pipe_signal);
+            
             close(pipefd[*pipe_counter][1][0]);
             *pipe_counter+=1;
             //printf("Pipe count: %d\n",*pipe_counter);
             switch(pipe_signal)
             {
                 case SIGTERM:
-                    //printf("P3 term\n");
+                    if(verbose)printf("P3 term\n");
                     printf("\n");
                     exit(0);
                     break;
@@ -321,9 +312,7 @@ int process3(const char *fifo2Loc)
 
     while(run)
     {
-        //sem_wait(mutex_wr);
-        //sleep(1);
-        sigprocmask(SIG_SETMASK,&blocked_run3,NULL);
+        menu();
         int fifo2FD2 = open(fifo2Loc,O_RDONLY);
         if(fifo2FD2==-1)
         {
@@ -337,11 +326,11 @@ int process3(const char *fifo2Loc)
                 printf("P3 FIFO2 error - read\n");
                 break;
             }
+            sigprocmask(SIG_SETMASK,&blocked_run3,NULL);
             if(charRecv>0) printf("P3(%d):%d\n",getpid(),charRecv-1);
         } 
         close(fifo2FD2);
         sigprocmask(SIG_SETMASK,&blocked,NULL);
-        //sem_post(mutex_rd);
     } 
     return 0;
 }

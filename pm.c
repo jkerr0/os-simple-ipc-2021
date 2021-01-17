@@ -9,7 +9,7 @@
 #include <signal.h>
 #include <sys/shm.h>
 #include <sys/ipc.h>
-#include <semaphore.h>
+//#include <semaphore.h>
 #define BSIZE 256
 
 void main_handler(int signal, siginfo_t* info,void*);
@@ -20,21 +20,26 @@ pid_t child[3];
 int main()
 {
     //ustawienie semaforow p1 i p3
+    /*
     int semMemID=shmget(IPC_PRIVATE,2*sizeof(sem_t),IPC_CREAT|0666);
     sem_t *sem = (sem_t*)shmat(semMemID,NULL,0);
     mutex_rd=sem;
     mutex_wr=sem+1;
     sem_init(mutex_rd,1,0);
-    sem_init(mutex_wr,1,0);
+    sem_init(mutex_wr,1,0);*/
     //ustawienie maski sygnalow
     sigfillset(&blocked);
     sigdelset(&blocked,SIGTERM);
     sigdelset(&blocked,SIGTSTP);
     sigdelset(&blocked,SIGCONT);
     sigdelset(&blocked,SIGUSR1);
+    sigdelset(&blocked,SIGUSR2);
     sigfillset(&blocked_chld);
     sigdelset(&blocked_chld,SIGUSR1);
+    sigdelset(&blocked_chld,SIGUSR2);
     sigprocmask(SIG_SETMASK,&blocked,NULL);
+    sigfillset(&blocked_run);
+    sigdelset(&blocked_run,SIGUSR1);
     int run=1;
     //tworzenie fifo
 
@@ -59,7 +64,7 @@ int main()
         return 5;
     }
     *pipe_counter=0;
-    for(int a=0;a<1024;a++)
+    for(int a=0;a<64;a++)
     {
         for(int i=0;i<3;i++)
         {
@@ -69,7 +74,10 @@ int main()
             }
         }
     }
-
+    if(pipe(pipe_term)==-1)
+    {
+        printf("Error - pipe_term\n");
+    }
     //tworzenie procesow potomnych
     
     int process_ret[3]={};
@@ -148,7 +156,9 @@ void main_handler(int signal,siginfo_t *info, void* ptr)
                 close(pipefd[*pipe_counter][i][1]);
             } 
             //printf("Wpisano do pipe\n");
+            if(sigRecv==SIGTSTP || sigRecv==SIGCONT)
             kill(child[0],SIGUSR1);
+            else if(sigRecv==SIGTERM) kill(child[0],SIGUSR2);
             //printf("SIGUSR1 wyslany\n");
         }
         else
